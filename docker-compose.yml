@@ -1,0 +1,139 @@
+version: '3.8'
+
+services:
+  # Main API service
+  viralforge-api:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - DEBUG=True
+      - DATABASE_URL=postgresql://viralforge:password@postgres:5432/viralforge_ai
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+    depends_on:
+      - postgres
+      - redis
+    volumes:
+      - ./media:/app/media
+      - ./logs:/app/logs
+    networks:
+      - viralforge-network
+    restart: unless-stopped
+
+  # Celery worker for background tasks
+  viralforge-worker:
+    build: .
+    command: celery -A src.core.celery_app worker --loglevel=info --concurrency=2
+    environment:
+      - DEBUG=True
+      - DATABASE_URL=postgresql://viralforge:password@postgres:5432/viralforge_ai
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+    depends_on:
+      - postgres
+      - redis
+    volumes:
+      - ./media:/app/media
+      - ./logs:/app/logs
+    networks:
+      - viralforge-network
+    restart: unless-stopped
+
+  # Celery beat scheduler
+  viralforge-scheduler:
+    build: .
+    command: celery -A src.core.celery_app beat --loglevel=info
+    environment:
+      - DEBUG=True
+      - DATABASE_URL=postgresql://viralforge:password@postgres:5432/viralforge_ai
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+    depends_on:
+      - postgres
+      - redis
+    volumes:
+      - ./logs:/app/logs
+    networks:
+      - viralforge-network
+    restart: unless-stopped
+
+  # PostgreSQL database
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_DB=viralforge_ai
+      - POSTGRES_USER=viralforge
+      - POSTGRES_PASSWORD=password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "5432:5432"
+    networks:
+      - viralforge-network
+    restart: unless-stopped
+
+  # Redis for caching and task queue
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    networks:
+      - viralforge-network
+    restart: unless-stopped
+
+  # Admin Control Panel
+  viralforge-admin:
+    build: ./admin-panel
+    ports:
+      - "3000:80"
+    environment:
+      - VITE_API_BASE_URL=http://viralforge-api:8000
+    depends_on:
+      - viralforge-api
+    networks:
+      - viralforge-network
+    restart: unless-stopped
+
+  # Redis Insight for monitoring (optional)
+  redis-insight:
+    image: redislabs/redisinsight:latest
+    ports:
+      - "8001:8001"
+    depends_on:
+      - redis
+    networks:
+      - viralforge-network
+    restart: unless-stopped
+
+  # Nginx reverse proxy (optional for production)
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - viralforge-api
+      - viralforge-admin
+    networks:
+      - viralforge-network
+    restart: unless-stopped
+    profiles: ["production"]
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  viralforge-network:
+    driver: bridge 

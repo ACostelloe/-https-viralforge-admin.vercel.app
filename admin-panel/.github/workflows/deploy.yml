@@ -1,0 +1,229 @@
+name: Deploy to Free Hosting
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    name: Test & Build
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        cache-dependency-path: admin-panel/package-lock.json
+        
+    - name: Install dependencies
+      working-directory: ./admin-panel
+      run: npm ci
+      
+    - name: Run tests
+      working-directory: ./admin-panel
+      run: npm run test:ci
+      
+    - name: Build application
+      working-directory: ./admin-panel
+      run: npm run build:prod
+      env:
+        VITE_API_BASE_URL: ${{ secrets.VITE_API_BASE_URL || 'https://api.viralforge.app/api' }}
+        VITE_OPENAI_API_KEY: ${{ secrets.VITE_OPENAI_API_KEY }}
+        VITE_TWITTER_API_KEY: ${{ secrets.VITE_TWITTER_API_KEY }}
+        VITE_TWITTER_API_SECRET: ${{ secrets.VITE_TWITTER_API_SECRET }}
+        VITE_INSTAGRAM_CLIENT_ID: ${{ secrets.VITE_INSTAGRAM_CLIENT_ID }}
+        VITE_INSTAGRAM_CLIENT_SECRET: ${{ secrets.VITE_INSTAGRAM_CLIENT_SECRET }}
+        VITE_FACEBOOK_APP_ID: ${{ secrets.VITE_FACEBOOK_APP_ID }}
+        VITE_FACEBOOK_APP_SECRET: ${{ secrets.VITE_FACEBOOK_APP_SECRET }}
+        VITE_LINKEDIN_CLIENT_ID: ${{ secrets.VITE_LINKEDIN_CLIENT_ID }}
+        VITE_LINKEDIN_CLIENT_SECRET: ${{ secrets.VITE_LINKEDIN_CLIENT_SECRET }}
+        VITE_SENTRY_DSN: ${{ secrets.VITE_SENTRY_DSN }}
+        VITE_GOOGLE_ANALYTICS_ID: ${{ secrets.VITE_GOOGLE_ANALYTICS_ID }}
+        
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: dist
+        path: admin-panel/dist
+        retention-days: 30
+
+  deploy-vercel:
+    name: Deploy to Vercel
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Download build artifacts
+      uses: actions/download-artifact@v3
+      with:
+        name: dist
+        path: admin-panel/dist
+        
+    - name: Deploy to Vercel
+      uses: amondnet/vercel-action@v25
+      with:
+        vercel-token: ${{ secrets.VERCEL_TOKEN }}
+        vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
+        vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
+        working-directory: ./admin-panel
+        vercel-args: '--prod'
+
+  deploy-netlify:
+    name: Deploy to Netlify
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Download build artifacts
+      uses: actions/download-artifact@v3
+      with:
+        name: dist
+        path: admin-panel/dist
+        
+    - name: Deploy to Netlify
+      uses: nwtgck/actions-netlify@v2.1
+      with:
+        publish-dir: './admin-panel/dist'
+        production-branch: main
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        deploy-message: "Deploy from GitHub Actions"
+        enable-pull-request-comment: false
+        enable-commit-comment: true
+        overwrites-pull-request-comment: true
+      env:
+        NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+        NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+
+  deploy-github-pages:
+    name: Deploy to GitHub Pages
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.ref == 'refs/heads/main'
+    
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        cache-dependency-path: admin-panel/package-lock.json
+        
+    - name: Install dependencies
+      working-directory: ./admin-panel
+      run: npm ci
+      
+    - name: Build for GitHub Pages
+      working-directory: ./admin-panel
+      run: npm run build:prod
+      env:
+        VITE_API_BASE_URL: ${{ secrets.VITE_API_BASE_URL || 'https://api.viralforge.app/api' }}
+        VITE_BASE_URL: '/VItalForge/'
+        
+    - name: Setup Pages
+      uses: actions/configure-pages@v3
+      
+    - name: Upload to GitHub Pages
+      uses: actions/upload-pages-artifact@v2
+      with:
+        path: './admin-panel/dist'
+        
+    - name: Deploy to GitHub Pages
+      id: deployment
+      uses: actions/deploy-pages@v2
+
+  deploy-surge:
+    name: Deploy to Surge.sh
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Download build artifacts
+      uses: actions/download-artifact@v3
+      with:
+        name: dist
+        path: admin-panel/dist
+        
+    - name: Install Surge
+      run: npm install -g surge
+      
+    - name: Deploy to Surge
+      working-directory: ./admin-panel
+      run: surge ./dist viralforge-admin.surge.sh
+      env:
+        SURGE_LOGIN: ${{ secrets.SURGE_LOGIN }}
+        SURGE_TOKEN: ${{ secrets.SURGE_TOKEN }}
+
+  lighthouse:
+    name: Lighthouse Performance Check
+    runs-on: ubuntu-latest
+    needs: [deploy-vercel]
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Wait for deployment
+      run: sleep 60
+      
+    - name: Run Lighthouse CI
+      uses: treosh/lighthouse-ci-action@v10
+      with:
+        urls: |
+          https://viralforge-admin.vercel.app
+        configPath: './admin-panel/.lighthouserc.json'
+        uploadArtifacts: true
+        temporaryPublicStorage: true
+
+  notify:
+    name: Deployment Notification
+    runs-on: ubuntu-latest
+    needs: [deploy-vercel, deploy-netlify, deploy-github-pages, deploy-surge]
+    if: always() && github.ref == 'refs/heads/main'
+    
+    steps:
+    - name: Deployment Success Notification
+      if: ${{ needs.deploy-vercel.result == 'success' || needs.deploy-netlify.result == 'success' }}
+      run: |
+        echo "🎉 Deployment successful!"
+        echo "Vercel: https://viralforge-admin.vercel.app"
+        echo "Netlify: https://viralforge-admin.netlify.app"
+        echo "GitHub Pages: https://your-username.github.io/VItalForge/"
+        echo "Surge: https://viralforge-admin.surge.sh"
+        
+    - name: Deployment Failure Notification
+      if: ${{ needs.deploy-vercel.result == 'failure' && needs.deploy-netlify.result == 'failure' }}
+      run: |
+        echo "❌ Deployment failed!"
+        echo "Please check the logs for more information." 
