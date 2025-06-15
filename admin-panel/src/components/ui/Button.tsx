@@ -11,7 +11,7 @@ export default function Button({
   type = 'button',
   ...props
 }: ButtonProps & any) {
-  const baseClasses = 'inline-flex items-center justify-center font-medium transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed active:scale-98'
+  const baseClasses = 'inline-flex items-center justify-center font-medium transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed active:scale-95'
   
   const variantClasses: Record<string, string> = {
     primary: 'bg-accent-400 hover:bg-accent-300 text-primary-900 focus:ring-accent-400',
