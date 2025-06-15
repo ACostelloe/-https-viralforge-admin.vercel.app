@@ -1,0 +1,14 @@
+{
+  "version": 2,
+  "name": "viralforge-admin-panel",
+  "buildCommand": "cd admin-panel && npm run build:prod",
+  "outputDirectory": "admin-panel/dist",
+  "installCommand": "cd admin-panel && npm install",
+  "framework": "vite",
+  "rewrites": [
+    {
+      "source": "/((?!api/).*)",
+      "destination": "/index.html"
+    }
+  ]
+} 
